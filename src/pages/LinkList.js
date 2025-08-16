@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { supabase } from '../supabaseClient';
@@ -7,7 +7,6 @@ import { useExport } from '../contexts/ExportContext';
 const LinkList = ({ links, onDelete, onLinksUpdated }) => {
   const { registerExportFunction, unregisterExportFunction } = useExport();
 
-  // Register/unregister export function
   useEffect(() => {
     registerExportFunction(handleExportCsv);
     return () => {
@@ -21,45 +20,41 @@ const LinkList = ({ links, onDelete, onLinksUpdated }) => {
   const [loadingOrder, setLoadingOrder] = useState(true);
   const [categoryOrderId, setCategoryOrderId] = useState(null);
 
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [editingCategoryName, setEditingCategoryName] = useState('');
-  const [originalCategoryName, setOriginalCategoryName] = useState('');
+  useEffect(() => {
+    const fetchCategoryOrder = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('category_order')
+          .select('id, ordered_categories')
+          .single(); // Assuming there's only one row for category order
 
-  const handleEditCategoryClick = (category) => {
-    setOriginalCategoryName(category);
-    setEditingCategoryName(category);
-    setShowEditModal(true);
-  };
+        if (error && error.code !== 'PGRST116') { // PGRST116 means no rows found
+          console.error('Error fetching category order:', error);
+        } else if (data) {
+          setCategoryOrder(data.ordered_categories || []);
+          setCategoryOrderId(data.id);
+        } else {
+          // If no row exists, create one
+          const { data: newOrderData, error: newOrderError } = await supabase
+            .from('category_order')
+            .insert({ ordered_categories: [] })
+            .select('id')
+            .single();
 
-  const handleCloseEditModal = () => {
-    setShowEditModal(false);
-    setEditingCategoryName('');
-    setOriginalCategoryName('');
-  };
+          if (newOrderError) {
+            console.error('Error creating initial category order:', newOrderError);
+          } else if (newOrderData) {
+            setCategoryOrderId(newOrderData.id);
+          }
+        }
+      } finally {
+        setLoadingOrder(false);
+      }
+    };
 
-  const handleExportCsv = () => {
-    const headers = ['Title', 'URL', 'Category', 'Author', 'Added Date'];
-    const rows = [];
+    fetchCategoryOrder();
+  }, []); // Empty dependency array means it runs once on mount
 
-    orderedCategories.forEach(category => {
-      const linksInCategory = groupedLinks[category];
-      if (!linksInCategory || linksInCategory.length === 0) return;
-
-      linksInCategory.forEach(link => {
-        rows.push([
-          link.title,
-          link.url,
-          link.category || '未分類',
-          link.author || 'N/A',
-          new Date(link.id).toLocaleDateString()
-        ]);
-      });
-    });
-
-    const BOM = '\uFEFF';
-    const csvContent = [
-      headers.join(','),
-    ...rows.map(row => row.join(','))]
   const categories = useMemo(() => {
     const allCategories = links.map(link => link.category).filter(Boolean);
     return [...new Set(allCategories)];
@@ -76,7 +71,7 @@ const LinkList = ({ links, onDelete, onLinksUpdated }) => {
         link.url.toLowerCase().includes(searchLower) ||
         (link.category && link.category.toLowerCase().includes(searchLower)) ||
         (link.author && link.author.toLowerCase().includes(searchLower));
-      
+
       const matchesCategory = 
         !selectedCategory || (link.category && link.category === selectedCategory);
 
@@ -119,19 +114,72 @@ const LinkList = ({ links, onDelete, onLinksUpdated }) => {
   const orderedCategories = useMemo(() => {
     const currentCategories = Object.keys(groupedLinks);
     const newCategories = currentCategories.filter(cat => !categoryOrder.includes(cat));
-    
+
     // Filter out categories that no longer exist in groupedLinks
     const filteredCategoryOrder = categoryOrder.filter(cat => currentCategories.includes(cat));
 
     return [...filteredCategoryOrder, ...newCategories];
   }, [groupedLinks, categoryOrder]);
 
+  const handleExportCsv = useCallback(() => {
+    const headers = ['Title', 'URL', 'Category', 'Author', 'Added Date'];
+    const rows = [];
+
+    orderedCategories.forEach(category => {
+      const linksInCategory = groupedLinks[category];
+      if (!linksInCategory || linksInCategory.length === 0) return;
+
+      linksInCategory.forEach(link => {
+        rows.push([
+          link.title,
+          link.url,
+          link.category || '未分類',
+          link.author || 'N/A',
+          new Date(link.id).toLocaleDateString()
+        ]);
+      });
+    });
+
+    // Simple CSV generation - does not handle commas/newlines within fields
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(field => `"${String(field).split('"').join('""')}"`).join(','))
+    ].join('\n');
+
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', 'url_manager_links.csv');
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  }, [orderedCategories, groupedLinks, links]); // Dependencies for useCallback
+
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingCategoryName, setEditingCategoryName] = useState('');
+  const [originalCategoryName, setOriginalCategoryName] = useState('');
+
+  const handleEditCategoryClick = (category) => {
+    setOriginalCategoryName(category);
+    setEditingCategoryName(category);
+    setShowEditModal(true);
+  };
+
+  const handleCloseEditModal = () => {
+    setShowEditModal(false);
+    setEditingCategoryName('');
+    setOriginalCategoryName('');
+  };
+
   const requestSort = (key) => {
     let direction = 'ascending';
     if (sortConfig.key === key && sortConfig.direction === 'ascending') {
       direction = 'descending';
-    } else if (key === 'id') {
-      direction = 'descending'; // Default date sort to descending
     }
     setSortConfig({ key, direction });
   };
@@ -236,45 +284,6 @@ const LinkList = ({ links, onDelete, onLinksUpdated }) => {
     }
   };
 
-  const handleExportCsv = () => {
-    const headers = ['Title', 'URL', 'Category', 'Author', 'Added Date'];
-    const rows = [];
-
-    orderedCategories.forEach(category => {
-      const linksInCategory = groupedLinks[category];
-      if (!linksInCategory || linksInCategory.length === 0) return;
-
-      linksInCategory.forEach(link => {
-        rows.push([
-          link.title,
-          link.url,
-          link.category || '未分類',
-          link.author || 'N/A',
-          new Date(link.id).toLocaleDateString()
-        ]);
-      });
-    });
-
-    // Simple CSV generation - does not handle commas/newlines within fields
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(field => `"${String(field).split('"').join('""')}"`).join(','))
-    ].join('\n');
-
-    const BOM = '\uFEFF';
-    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    if (link.download !== undefined) {
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', 'url_manager_links.csv');
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    }
-  };
-
   if (loadingOrder) {
     return <div>カテゴリーの並び順を読み込み中...</div>;
   }
@@ -331,14 +340,13 @@ const LinkList = ({ links, onDelete, onLinksUpdated }) => {
                     {(provided) => (
                       <div
                         ref={provided.innerRef}
-                        {...provided.draggableProps}
                         {...provided.dragHandleProps}
                         className="mb-4"
                       >
                         <h3 className="h5 mb-2 d-flex justify-content-between align-items-center">
                           {category}
                           <button 
-                            className="btn btn-sm btn-outline-secondary ms-2" 
+                            className="btn btn-sm btn-outline-secondary ms-2"
                             onClick={() => handleEditCategoryClick(category)}
                           >
                             編集
@@ -406,6 +414,4 @@ const LinkList = ({ links, onDelete, onLinksUpdated }) => {
     </div>
   );
 };
-}
 export default LinkList;
-

@@ -106,20 +106,24 @@ function App() {
       <ExportProvider> {/* ExportProvider starts here, wrapping Header */}
         <Header />
         <div className="container-fluid">
-          <Routes>
-            <Route 
-              path="/" 
-              element={<LinkList links={links} onDelete={handleDeleteLink} onLinksUpdated={fetchLinks} />} 
-            />
-            <Route 
-              path="/add" 
-              element={<AddLink onAdd={handleAddLink} />} 
-            />
-            <Route 
-              path="/edit/:id" 
-              element={<EditLink links={links} onUpdate={handleUpdateLink} />} 
-            />
-          </Routes>
+          {loading ? (
+            <p>Loading...</p>
+          ) : (
+            <Routes>
+              <Route 
+                path="/" 
+                element={<LinkList links={links} onDelete={handleDeleteLink} onLinksUpdated={fetchLinks} />} 
+              />
+              <Route 
+                path="/add" 
+                element={<AddLink onAdd={handleAddLink} />} 
+              />
+              <Route 
+                path="/edit/:id" 
+                element={<EditLink links={links} onUpdate={handleUpdateLink} />} 
+              />
+            </Routes>
+          )}
         </div>
       </ExportProvider> {/* Close ExportProvider */}
     </div>
