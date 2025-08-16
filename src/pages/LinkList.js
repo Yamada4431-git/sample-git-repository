@@ -8,11 +8,11 @@ const LinkList = ({ links, onDelete, onLinksUpdated }) => {
   const { registerExportFunction, unregisterExportFunction } = useExport();
 
   useEffect(() => {
-    registerExportFunction(handleExportCsv);
+    registerExportFunction();
     return () => {
       unregisterExportFunction();
     };
-  }, [registerExportFunction, unregisterExportFunction, handleExportCsv]);
+  }, [registerExportFunction, unregisterExportFunction]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: 'id', direction: 'descending' });
@@ -120,45 +120,6 @@ const LinkList = ({ links, onDelete, onLinksUpdated }) => {
 
     return [...filteredCategoryOrder, ...newCategories];
   }, [groupedLinks, categoryOrder]);
-
-  const handleExportCsv = useCallback(() => {
-    const headers = ['Title', 'URL', 'Category', 'Author', 'Added Date'];
-    const rows = [];
-
-    orderedCategories.forEach(category => {
-      const linksInCategory = groupedLinks[category];
-      if (!linksInCategory || linksInCategory.length === 0) return;
-
-      linksInCategory.forEach(link => {
-        rows.push([
-          link.title,
-          link.url,
-          link.category || '未分類',
-          link.author || 'N/A',
-          new Date(link.id).toLocaleDateString()
-        ]);
-      });
-    });
-
-    // Simple CSV generation - does not handle commas/newlines within fields
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(field => `"${String(field).split('"').join('""')}"`).join(','))
-    ].join('\n');
-
-    const BOM = '\uFEFF';
-    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    if (link.download !== undefined) {
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', 'url_manager_links.csv');
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    }
-  }, [orderedCategories, groupedLinks, links]); // Dependencies for useCallback
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingCategoryName, setEditingCategoryName] = useState('');

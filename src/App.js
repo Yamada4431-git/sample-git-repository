@@ -65,6 +65,7 @@ function App() {
 
   const handleAddLink = async (link) => {
     const newLink = { ...link, id: Date.now() }; // Use Date.now() for id
+    // eslint-disable-next-line no-unused-vars
     const { data, error } = await supabase
       .from('links')
       .insert([newLink])
